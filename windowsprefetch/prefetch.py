@@ -27,6 +27,7 @@ import os
 import struct
 import sys
 import tempfile
+import sqlite3
 
 
 
@@ -392,6 +393,23 @@ class Prefetch(object):
         print ""
 
 
+    def sqliteOutput(self):
+        global conn
+        global cur
+
+        cur.execute('insert into headers values (?,?,?,?)', [ntpath.basename(self.pFileName),self.executableName,self.runCount,self.timestamps[0]])
+
+        for volume in self.directoryStringsArray:
+            for i in volume:
+                cur.execute('insert into dirs values (?,?)',[ntpath.basename(self.pFileName),i])
+
+        for i in self.resources:
+            if i:
+                cur.execute('insert into files values (?,?)',[ntpath.basename(self.pFileName), i])
+
+        conn.commit()
+
+
 # The code in the class below was taken and then modified from Francesco 
 # Picasso's w10pfdecomp.py script. This modification makes two simple changes:
 #
@@ -491,6 +509,87 @@ class DecompressWin10(object):
         return bytearray(ntDecompressed)
 
 
+def createSqlite():
+    try:
+        global conn
+        global cur
+        #conn = sqlite3.connect(path)
+        #self.cur = self.conn.cursor()
+
+        cur.execute('create table if not exists headers (filename,exename,runcount,lastrun)')
+        cur.execute('create table if not exists dirs (filename,dirname)')
+        cur.execute('create table if not exists files (filename,filepath)')
+
+        cur.execute('CREATE INDEX if not exists [headers_idx1] ON headers (filename,exename);')
+        cur.execute('CREATE INDEX if not exists [dirs_idx1] ON dirs (filename,dirname);')
+        cur.execute('CREATE INDEX if not exists [files_idx1] ON files (filename,filepath);')
+
+        cur.executescript('drop view dirs_unique; '
+                          'create view as dirs_unique '
+                          'select dirname, count(*) as pfcount from dirs group by dirname order by pfcount desc;')
+
+        cur.executescript('drop view ext_list_count; '
+                          'create view as ext_list_count '
+                          'select substr(filepath, -3, 3) as ext, count(*) as extcount from files '
+                          'group by ext order by extcount desc;')
+
+        cur.executescript('drop view files_unique; '
+                          'create view as files_unique '
+                          'select filepath , count(*) as pfcount from files group by filepath order by pfcount desc;')
+
+        cur.executescript('drop view files_unique_archive; '
+                          'create view as files_unique_archive '
+                          'select * from files_unique where filepath like \'%.zip\' or filepath like \'%.rar\' or '
+                          'filepath like \'%.7z\' or filepath like \'%gz\';')
+
+        cur.executescript('drop view files_unique_cpl; '
+                          'create view as files_unique_cpl '
+                          'select * from files_unique where filepath like \'%.cpl\';')
+
+        cur.executescript('drop view files_unique_dll; '
+                          'create view as files_unique_dll '
+                          'select * from files_unique where filepath like \'%.dll\';')
+
+        cur.executescript('drop view files_unique_docs; '
+                          'create view as files_unique_docs '
+                          'select * from files_unique where filepath like \'%.doc%\' or filepath like \'%.xls%\' or '
+                          'filepath like \'%.ppt%\' or filepath like \'%.pdf\';')
+
+        cur.executescript('drop view files_unique_exe; '
+                          'create view as files_unique_exe '
+                          'select * from files_unique where filepath like \'%.exe\' or filepath like \'%.bat\' or filepath like \'%.com\';')
+
+        cur.executescript('drop view files_unique_images; '
+                          'create view as files_unique_images '
+                          'select * from files_unique where filepath like \'%.jpg\' or filepath like \'%.jpeg\' or '
+                          'filepath like \'%.png\' or filepath like \'%.gif\';')
+
+        cur.executescript('drop view files_unique_python; '
+                          'create view as files_unique_python '
+                          'select * from files_unique where filepath like \'%.py\' or filepath like \'%.pyc\';')
+
+        cur.executescript('drop view files_unqiue_else; '
+                          'create view as files_unqiue_else '
+                          'select * from files_unique where '
+                          'filepath not in (select filepath from files_unique_archive) and '
+                          'filepath not in (select filepath from files_unique_cpl) and '
+                          'filepath not in (select filepath from files_unique_dll) and '
+                          'filepath not in (select filepath from files_unique_docs) and '
+                          'filepath not in (select filepath from files_unique_exe) and '
+                          'filepath not in (select filepath from files_unique_images) and '
+                          'filepath not in (select filepath from files_unique_python);')
+
+        cur.executescript('drop view harddisk_list; '
+                          'create view as harddisk_list '
+                          'select path, count(*) as pathcount from '
+                          '(select substr(dirname,0,25) as path from dirs union all '
+                          'select substr(filepath,0,25) as path from files)'
+                          'group by path;')
+
+    except sqlite3.Error, error:
+        print str(error)
+        exit()
+
 
 def sortTimestamps(directory):
     timestamps = []
@@ -534,6 +633,7 @@ def main():
     p.add_argument("-d", "--directory", help="Parse all PF files in a given directory")
     p.add_argument("-e", "--executed", help="Sort PF files by ALL execution times")
     p.add_argument("-f", "--file", help="Parse a given Prefetch file")
+    p.add_argument("-s", "--sqlite", help="Output data to SQLite database file")
     args = p.parse_args()
 
     if args.file:
@@ -558,6 +658,13 @@ def main():
             sys.exit("\n[ - ] When enumerating a directory, add a trailing slash\n")
 
         if os.path.isdir(args.directory):
+            if args.sqlite:
+                global conn
+                global cur
+                conn = sqlite3.connect(args.sqlite)
+                cur = conn.cursor()
+                createSqlite()
+
             if args.csv:
                 print "Last Executed, MFT Seq Number, MFT Record Number, Executable Name, Run Count"
 
@@ -581,6 +688,8 @@ def main():
                             try:
                                 p = Prefetch(args.directory + i)
                                 p.prettyPrint()
+                                if args.sqlite:
+                                    p.sqliteOutput()
                             except Exception, e:
                                 print "[ - ] {} could not be parsed".format(i)
                         else:
