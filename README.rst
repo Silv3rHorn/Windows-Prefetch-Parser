@@ -12,6 +12,7 @@ Features
 * CSV output support
 * (Limited) Windows 10 support - Windows 10 prefetch files must be parsed from a Windows 8+ workstation
 * Sort a directory of Prefetch files by all execution timestamps
+* Output a directory full of .pf files into SQLite tables for aggregate analysis
 
 
 Command-Line Options
@@ -31,6 +32,8 @@ For now, prefetch.py requires one of two command-line options: ``--file`` specif
       -e EXECUTED, --executed EXECUTED
                         Sort PF files by ALL execution times
       -f FILE, --file FILE  Parse a given Prefetch file
+      -s SQLITE, --sqlite SQLITE
+                        Output data to SQLite database file
 
 **--file**
 
@@ -84,6 +87,10 @@ Using the ``--file / -f`` switch with a single prefetch file results in the outp
 **--directory**
 
 By invoking the ``--directory / -d`` flag, the Analyst is able to parse an entire directory of Prefetch files at once.
+
+**--sqlite**
+
+Use the ``--sqlite / -s`` option with the ``--directory / -d`` option to output the prefetch file header, directory list, and file list into SQLite tables.
 
 **--executed**
 
