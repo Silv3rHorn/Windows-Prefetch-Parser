@@ -524,52 +524,52 @@ def createSqlite():
         cur.execute('CREATE INDEX if not exists [dirs_idx1] ON dirs (filename,dirname);')
         cur.execute('CREATE INDEX if not exists [files_idx1] ON files (filename,filepath);')
 
-        cur.executescript('drop view dirs_unique; '
-                          'create view as dirs_unique '
+        cur.executescript('drop view if exists dirs_unique; '
+                          'create view dirs_unique as '
                           'select dirname, count(*) as pfcount from dirs group by dirname order by pfcount desc;')
 
-        cur.executescript('drop view ext_list_count; '
-                          'create view as ext_list_count '
+        cur.executescript('drop view if exists ext_list_count; '
+                          'create view ext_list_count as '
                           'select substr(filepath, -3, 3) as ext, count(*) as extcount from files '
                           'group by ext order by extcount desc;')
 
-        cur.executescript('drop view files_unique; '
-                          'create view as files_unique '
+        cur.executescript('drop view if exists files_unique; '
+                          'create view files_unique as '
                           'select filepath , count(*) as pfcount from files group by filepath order by pfcount desc;')
 
-        cur.executescript('drop view files_unique_archive; '
-                          'create view as files_unique_archive '
+        cur.executescript('drop view if exists files_unique_archive; '
+                          'create view files_unique_archive as '
                           'select * from files_unique where filepath like \'%.zip\' or filepath like \'%.rar\' or '
                           'filepath like \'%.7z\' or filepath like \'%gz\';')
 
-        cur.executescript('drop view files_unique_cpl; '
-                          'create view as files_unique_cpl '
+        cur.executescript('drop view if exists files_unique_cpl; '
+                          'create view files_unique_cpl as '
                           'select * from files_unique where filepath like \'%.cpl\';')
 
-        cur.executescript('drop view files_unique_dll; '
-                          'create view as files_unique_dll '
+        cur.executescript('drop view if exists files_unique_dll; '
+                          'create view files_unique_dll as '
                           'select * from files_unique where filepath like \'%.dll\';')
 
-        cur.executescript('drop view files_unique_docs; '
-                          'create view as files_unique_docs '
+        cur.executescript('drop view if exists files_unique_docs; '
+                          'create view files_unique_docs as '
                           'select * from files_unique where filepath like \'%.doc%\' or filepath like \'%.xls%\' or '
                           'filepath like \'%.ppt%\' or filepath like \'%.pdf\';')
 
-        cur.executescript('drop view files_unique_exe; '
-                          'create view as files_unique_exe '
+        cur.executescript('drop view if exists files_unique_exe; '
+                          'create view files_unique_exe as '
                           'select * from files_unique where filepath like \'%.exe\' or filepath like \'%.bat\' or filepath like \'%.com\';')
 
-        cur.executescript('drop view files_unique_images; '
-                          'create view as files_unique_images '
+        cur.executescript('drop view if exists files_unique_images; '
+                          'create view files_unique_images as '
                           'select * from files_unique where filepath like \'%.jpg\' or filepath like \'%.jpeg\' or '
                           'filepath like \'%.png\' or filepath like \'%.gif\';')
 
-        cur.executescript('drop view files_unique_python; '
-                          'create view as files_unique_python '
+        cur.executescript('drop view if exists files_unique_python; '
+                          'create view files_unique_python as '
                           'select * from files_unique where filepath like \'%.py\' or filepath like \'%.pyc\';')
 
-        cur.executescript('drop view files_unqiue_else; '
-                          'create view as files_unqiue_else '
+        cur.executescript('drop view if exists files_unqiue_else; '
+                          'create view files_unqiue_else as '
                           'select * from files_unique where '
                           'filepath not in (select filepath from files_unique_archive) and '
                           'filepath not in (select filepath from files_unique_cpl) and '
@@ -579,8 +579,8 @@ def createSqlite():
                           'filepath not in (select filepath from files_unique_images) and '
                           'filepath not in (select filepath from files_unique_python);')
 
-        cur.executescript('drop view harddisk_list; '
-                          'create view as harddisk_list '
+        cur.executescript('drop view if exists harddisk_list; '
+                          'create view harddisk_list as '
                           'select path, count(*) as pathcount from '
                           '(select substr(dirname,0,25) as path from dirs union all '
                           'select substr(filepath,0,25) as path from files)'
@@ -687,9 +687,10 @@ def main():
                         if os.path.getsize(args.directory + i):
                             try:
                                 p = Prefetch(args.directory + i)
-                                p.prettyPrint()
                                 if args.sqlite:
                                     p.sqliteOutput()
+                                else:
+                                    p.prettyPrint()
                             except Exception, e:
                                 print "[ - ] {} could not be parsed".format(i)
                         else:
