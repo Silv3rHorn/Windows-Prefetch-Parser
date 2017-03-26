@@ -29,11 +29,107 @@ import sys
 import tempfile
 import sqlite3
 
-
-
 class Prefetch(object):
+    class PfFileMetric(object):
+        def __init__(self, traceRecord=0, traceRecordCount=0, fetchCount=0, pathOffset=0, pathLength=0, flags=0, mftRecNum=0, mftRecSeq=0):
+            self.TraceRecord = traceRecord
+            self.TraceRecordCount = traceRecordCount
+            self.FetchCount = fetchCount
+            self.PathOffset = pathOffset
+            self.PathLength = pathLength
+            self.Flags = flags
+            self.MftRecNum = mftRecNum
+            self.MftRecSeq = mftRecSeq
+            self.PathArrayId = -1
+
+        def GetFileProps(self):
+            retval = ""
+            if self.Flags & 0x0200:
+                retval += "X"
+            else:
+                retval += "."
+            if self.Flags & 0x0002:
+                retval += "R"
+            else:
+                retval += "."
+            if self.Flags & 0x0001:
+                retval += "D"
+            else:
+                retval += "."
+            return retval
+
+    def GetTraceUsage(self, str):
+        for i in self.FileMetricArray:
+            if i.PathArrayId == self.resources.index(str):
+                arr = self.TraceChainArray[i.TraceRecord:i.TraceRecord+i.TraceRecordCount]
+                retval = 0
+                for j in arr:
+                    retval |= j.Used
+                #arr = 0
+                return format(retval, "08b")
+
+    def GetTraceFetchage(self, str):
+        for i in self.FileMetricArray:
+            if i.PathArrayId == self.resources.index(str):
+                arr = self.TraceChainArray[i.TraceRecord:i.TraceRecord + i.TraceRecordCount]
+                retval = 0
+                for j in arr:
+                    retval |= j.Fetched
+                # arr = 0
+                return format(retval, "08b")
+
+    def GetFileProps(self, str):
+        for i in self.FileMetricArray:
+            if i.PathArrayId == self.resources.index(str):
+                return i.GetFileProps()
+
+    class PfTraceChain(object):
+        def __init__(self, recordNum=0, nextRecordNum=0, memPage=0, flag1=0, flag2=0, used=0, fetched=0):
+            self.RecordNum = recordNum
+            self.NextRecordNum = nextRecordNum
+            self.MemPage = memPage
+            self.Flag1 = flag1
+            self.Flag2 = flag2
+            self.Used = used
+            self.Fetched = fetched
+
+        def GetFlag1Props(self):
+            retval = ""
+            if self.Flag1 & 0x02:
+                retval += "X"
+            else:
+                retval += "."
+            if self.Flag1 & 0x04:
+                retval += "R"
+            else:
+                retval += "."
+            if self.Flag1 & 0x08:
+                retval += "F"
+            else:
+                retval += "."
+            if self.Flag1 & 0x01:
+                retval += "D"
+            else:
+                retval += "."
+            return retval
+
+        def UsedString(self):
+            return format(self.Used, "08b")
+
+        def FetchedString(self):
+            return format(self.Fetched, "08b")
+
+    #class PfFilePath(object):
+    #    def __init__(self, filePath="", offset=0):
+    #        self.FilePath = filePath
+    #        self.Offset = offset
+
+#class Prefetch(object):
     def __init__(self, infile):
         self.pFileName = infile
+        self.FileMetricArray = []
+        self.TraceChainArray = []
+        self.resources = []
 
         with open(infile, "rb") as f:
             if f.read(3) == "MAM":
@@ -122,17 +218,38 @@ class Prefetch(object):
     def metricsArray17(self, infile):
         # File Metrics Array
         # 20 bytes
-        unknown0 = infile.read(4)
-        unknown1 = infile.read(4)
-        self.filenameOffset = struct.unpack_from("I", infile.read(4))[0]
-        self.filenameLength = struct.unpack_from("I", infile.read(4))[0]
-        unknown2 = infile.read(4)
+        infile.seek(self.metricsOffset)
+        count = 0
+
+        while count < self.metricsCount:
+            record = Prefetch.PfFileMetric()
+            record.TraceRecord = struct.unpack_from("I", infile.read(4))[0]
+            record.TraceRecordCount = struct.unpack_from("I", infile.read(4))[0]
+            record.PathOffset = struct.unpack_from("I", infile.read(4))[0]
+            record.PathLength = struct.unpack_from("I", infile.read(4))[0]
+            record.Flags = struct.unpack_from("I", infile.read(4))[0]
+            self.FileMetricArray.append(record)
+            count += 1
 
     def traceChainsArray17(self, infile):
         # Read through the Trace Chains Array
         # Not being parsed for information
         # 12 bytes
-        infile.read(12)
+        infile.seek(self.traceChainsOffset)
+        count = 0
+
+        while count < self.traceChainsCount:
+            record = Prefetch.PfTraceChain()
+            record.RecordNum = count
+            record.NextRecordNum = struct.unpack_from("<i", infile.read(4))[0]
+            record.MemPage = struct.unpack_from("<I", infile.read(4))[0]
+            record.Flag1 = struct.unpack_from("B", infile.read(1))[0]
+            record.Flag2 = struct.unpack_from("B", infile.read(1))[0]
+            record.Used = struct.unpack_from("B", infile.read(1))[0]
+            record.Fetched = struct.unpack_from("B", infile.read(1))[0]
+
+            self.TraceChainArray.append(record)
+            count += 1
 
     def volumeInformation17(self, infile):
         # Volume information
@@ -188,15 +305,26 @@ class Prefetch(object):
     def metricsArray23(self, infile):
         # File Metrics Array
         # 32 bytes per array, not parsed in this script
+        #infile.seek(self.metricsOffset)
+
         infile.seek(self.metricsOffset)
-        unknown0 = infile.read(4)
-        unknown1 = infile.read(4)
-        unknown2 = infile.read(4)
-        self.filenameOffset = struct.unpack_from("I", infile.read(4))[0]
-        self.filenameLength = struct.unpack_from("I", infile.read(4))[0]
-        unknown3 = infile.read(4)
-        self.mftRecordNumber = self.convertFileReference(infile.read(6))
-        self.mftSeqNumber = struct.unpack_from("H", infile.read(2))[0]
+        count = 0
+
+        while count < self.metricsCount:
+            record = Prefetch.PfFileMetric()
+            record.TraceRecord = struct.unpack_from("<I", infile.read(4))[0]
+            record.TraceRecordCount = struct.unpack_from("<I", infile.read(4))[0]
+            record.FetchCount = struct.unpack_from("<I", infile.read(4))[0]
+            record.PathOffset = struct.unpack_from("<I", infile.read(4))[0]
+            record.PathLength = struct.unpack_from("<I", infile.read(4))[0]
+            record.Flags = struct.unpack_from("<I", infile.read(4))[0]
+
+            record.MftRecNum = struct.unpack_from("<I", infile.read(6))[0]
+            #self.convertFileReference(infile.read(6))
+            record.MftRecSeq = struct.unpack_from("<H", infile.read(2))[0]
+
+            self.FileMetricArray.append(record)
+            count += 1
 
     def volumeInformation23(self, infile):
         # This function consumes the Volume Information array
@@ -252,11 +380,10 @@ class Prefetch(object):
         self.runCount = struct.unpack_from("I", infile.read(4))[0]
         unknown2 = infile.read(96)
 
-    def traceChainsArray30(self, infile):
+    #def traceChainsArray30(self, infile):
         # Trace Chains Array
-        # Read though, not being parsed for information
-        # 8 bytes
-        infile.read(8)
+        # same format
+
 
     def volumeInformation30(self, infile):
         # Volumes Information
@@ -295,12 +422,22 @@ class Prefetch(object):
 
     def getFilenameStrings(self, infile):
         # Parses filename strings from the PF file
-        self.resources = []
+        #self.resources = []
         infile.seek(self.filenameStringsOffset)
-        self.filenames = infile.read(self.filenameStringsSize)
+        #record = PfFilePath()
 
-        for i in self.filenames.split("\x00\x00"):
-            self.resources.append(i.replace("\x00", ""))
+        self.filenames = infile.read(self.filenameStringsSize).decode("utf16").encode("utf8")
+
+        for i in self.filenames.split("\x00"):
+            self.resources.append(i)
+
+        for i in self.FileMetricArray:
+            infile.seek(self.filenameStringsOffset + i.PathOffset)
+            path = infile.read(i.PathLength*2).decode("utf16").encode("utf8")
+            for j in self.resources:
+                if j == path:
+                    i.PathArrayId = self.resources.index(j)
+                    break
 
     def convertTimestamp(self, timestamp):
         # Timestamp is a Win32 FILETIME value
@@ -349,7 +486,7 @@ class Prefetch(object):
         return int(byteString, 16)
 
 
-    def prettyPrint(self):
+    def prettyPrint(self, verbose):
         # Prints important Prefetch data in a structured format
         banner = "=" * (len(ntpath.basename(self.pFileName)) + 2)
         print "\n{0}\n{1}\n{0}\n".format(banner, ntpath.basename(self.pFileName))
@@ -377,20 +514,54 @@ class Prefetch(object):
         print ""
 
         print "Resources loaded:\n"
+        print "       Used     Fetched  Props Path"
+        print "       87654321 87654321"
         count = 1
         for i in self.resources:
             if i:
-                if count > 999:
-                    print "{}: {}".format(count, i)
-                if count > 99:
-                    print "{}:  {}".format(count, i)                            
-                elif count > 9:
-                    print "{}:   {}".format(count, i)
-                else:
-                    print "{}:    {}".format(count, i)
+                #print "{:5}: {}".format(count, i)
+                print "{:5}: {} {} {}    {}".format(count, self.GetTraceUsage(i), self.GetTraceFetchage(i), self.GetFileProps(i), i)
+
+                #if count > 999:
+                #    print "{}: {}".format(count, i)
+                #if count > 99:
+                #    print "{}:  {}".format(count, i)
+                #elif count > 9:
+                #    print "{}:   {}".format(count, i)
+                #else:
+                #    print "{}:    {}".format(count, i)
             count += 1
 
         print ""
+        if verbose:
+            print "Section A offset: " + str(self.metricsOffset)
+            print "Section A count: " + str(self.metricsCount)
+            print "Section B offset: " + str(self.traceChainsOffset)
+            print "Section B count: " + str(self.traceChainsCount)
+            print "Section C offset: " + str(self.filenameStringsOffset)
+            print "Section C size: " + str(self.filenameStringsSize)
+            print "Section C count: " + str(self.resources.__len__())
+            print ""
+
+            print "Section A Records (File Metrics)"
+            print "TraceRec Count PfCnt PthOff PthLen Flags     MftRec Seq  Path"
+            for rec in self.FileMetricArray:
+                print "{:8} {:5} {:5} {:6} {:6} x{:04x}-{} {:7} {:3}  {}".format(rec.TraceRecord, rec.TraceRecordCount, rec.FetchCount, rec.PathOffset, rec.PathLength, rec.Flags,
+                                                          rec.GetFileProps(), rec.MftRecNum, rec.MftRecSeq, self.resources[rec.PathArrayId])
+            print ""
+
+            print "Section B Records (Trace Chains)"
+            print "RecNum NextRec  MemPg    Flag1     Flg2 Used     Fetched"
+            nameFlop = 1
+            for trace in self.TraceChainArray:
+                if nameFlop:
+                    fileString = self.resources[filter(lambda x: x.TraceRecord==trace.RecordNum, self.FileMetricArray)[0].PathArrayId]
+                    nameFlop = 0
+                if trace.NextRecordNum == -1:
+                    nameFlop = 1
+                print "{:6}  {:6} {:6} {:08b}-{}    {} {:08b} {:08b} {}".format(trace.RecordNum, trace.NextRecordNum, trace.MemPage, trace.Flag1, trace.GetFlag1Props(),
+                                                                                trace.Flag2, trace.Used, trace.Fetched, fileString)
+                fileString = ""
 
 
     def sqliteOutput(self):
@@ -501,7 +672,7 @@ class DecompressWin10(object):
 
             if ntstatus:
                 sys.exit('Decompression failed, err: {}'.format(
-                    tohex(ntstatus, 32)))
+                    self.tohex(ntstatus, 32)))
 
             if ntFinalUncompressedSize.value != decompressed_size:
                 sys.exit('Decompressed with a different size than original!')
@@ -516,9 +687,9 @@ def createSqlite():
         #conn = sqlite3.connect(path)
         #self.cur = self.conn.cursor()
 
-        cur.execute('create table if not exists headers (filename,exename,runcount,lastrun)')
-        cur.execute('create table if not exists dirs (filename,dirname)')
-        cur.execute('create table if not exists files (filename,filepath)')
+        cur.execute('create table if not exists headers (filename text,exename text,runcount text,lastrun text)')
+        cur.execute('create table if not exists dirs (filename text,dirname text)')
+        cur.execute('create table if not exists files (filename text,filepath text)')
 
         cur.execute('CREATE INDEX if not exists [headers_idx1] ON headers (filename,exename);')
         cur.execute('CREATE INDEX if not exists [dirs_idx1] ON dirs (filename,dirname);')
@@ -634,6 +805,7 @@ def main():
     p.add_argument("-e", "--executed", help="Sort PF files by ALL execution times")
     p.add_argument("-f", "--file", help="Parse a given Prefetch file")
     p.add_argument("-s", "--sqlite", help="Output data to SQLite database file")
+    p.add_argument("-v", "--verbose", help="Output additional data to terminal", action="store_true")
     args = p.parse_args()
 
     if args.file:
@@ -649,7 +821,7 @@ def main():
                     print "Last Executed, Executable Name, Run Count"
                     print "{}, {}-{}, {}".format(p.timestamps[0], p.executableName, p.hash, p.runCount)
                 else:
-                    p.prettyPrint()
+                    p.prettyPrint(args.verbose)
             else:
                 print "[ - ] {}: Zero byte Prefetch file".format(args.file)
 
@@ -690,7 +862,7 @@ def main():
                                 if args.sqlite:
                                     p.sqliteOutput()
                                 else:
-                                    p.prettyPrint()
+                                    p.prettyPrint(args.verbose)
                             except Exception, e:
                                 print "[ - ] {} could not be parsed".format(i)
                         else:
