@@ -233,7 +233,6 @@ class Prefetch(object):
 
     def traceChainsArray17(self, infile):
         # Read through the Trace Chains Array
-        # Not being parsed for information
         # 12 bytes
         infile.seek(self.traceChainsOffset)
         count = 0
@@ -380,9 +379,23 @@ class Prefetch(object):
         self.runCount = struct.unpack_from("I", infile.read(4))[0]
         unknown2 = infile.read(96)
 
-    #def traceChainsArray30(self, infile):
-        # Trace Chains Array
-        # same format
+    def traceChainsArray30(self, infile):
+        # Read through the Trace Chains Array
+        # 8 bytes
+        infile.seek(self.traceChainsOffset)
+        count = 0
+
+        while count < self.traceChainsCount:
+            record = Prefetch.PfTraceChain()
+            record.RecordNum = count
+            record.MemPage = struct.unpack_from("<I", infile.read(4))[0]
+            record.Flag1 = struct.unpack_from("B", infile.read(1))[0]
+            record.Flag2 = struct.unpack_from("B", infile.read(1))[0]
+            record.Used = struct.unpack_from("B", infile.read(1))[0]
+            record.Fetched = struct.unpack_from("B", infile.read(1))[0]
+
+            self.TraceChainArray.append(record)
+            count += 1
 
 
     def volumeInformation30(self, infile):
